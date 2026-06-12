@@ -1,0 +1,7 @@
+[server]
+# Use poll-based file watcher to avoid errors from transformers/torchvision
+# when Streamlit inspects installed packages for hot-reload.
+fileWatcherType = "poll"
+
+[browser]
+gatherUsageStats = false

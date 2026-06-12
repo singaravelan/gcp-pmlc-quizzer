@@ -1,0 +1,28 @@
+streamlit>=1.35.0
+
+# LangChain ecosystem
+langchain-core>=0.3.0
+langchain-anthropic>=0.3.0
+langchain-ollama>=0.2.0
+langchain-community>=0.3.0
+langchain-text-splitters>=0.3.0
+langchain-huggingface>=0.1.0
+
+# Vector store
+faiss-cpu>=1.8.0
+
+# Embeddings fallback for Claude backend users (local, ~80 MB one-time download)
+sentence-transformers>=3.0.0
+
+# Document parsing
+pypdf>=4.0.0
+python-docx>=1.1.0
+
+# Free web search (no API key required) — package was renamed from duckduckgo-search
+ddgs>=0.1.0
+
+# HTTP utilities
+requests>=2.31.0
+
+# Configuration
+python-dotenv>=1.0.0
