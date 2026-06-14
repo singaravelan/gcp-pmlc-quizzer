@@ -1,6 +1,15 @@
+import os
+
+# Fix SSL PermissionError due to environment keylog file settings in sandbox environments
+if "SSLKEYLOGFILE" in os.environ:
+    try:
+        with open(os.environ["SSLKEYLOGFILE"], "a") as f:
+            pass
+    except Exception:
+        os.environ.pop("SSLKEYLOGFILE", None)
+
 from pathlib import Path
 from dotenv import load_dotenv
-import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env", override=True)

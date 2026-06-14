@@ -1,3 +1,13 @@
+import os
+
+# Fix SSL PermissionError due to environment keylog file settings in sandbox environments
+if "SSLKEYLOGFILE" in os.environ:
+    try:
+        with open(os.environ["SSLKEYLOGFILE"], "a") as f:
+            pass
+    except Exception:
+        os.environ.pop("SSLKEYLOGFILE", None)
+
 """
 GCP PMLE Quizzer — Home Page
 
