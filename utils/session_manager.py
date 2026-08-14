@@ -26,12 +26,11 @@ SS_SELECTED_TOPICS = "selected_topics"      # list[int]: topic IDs chosen for qu
 
 # Quiz configuration
 SS_NUM_QUESTIONS = "num_questions"          # int: questions per topic
-SS_BLOOM_LEVEL = "bloom_level"             # int: Bloom's taxonomy level (3-6)
 
 # Quiz runtime state
 SS_QUESTIONS = "questions"                  # list[dict]: generated question objects
 SS_CURRENT_Q_IDX = "current_q_idx"         # int: current question index (0-based)
-SS_ANSWERS = "answers"                      # dict: {question_id: "A"|"B"|"C"|"D"}
+SS_ANSWERS = "answers"                      # dict: {question_id: ["A"] | ["A", "C"]}
 SS_QUIZ_COMPLETE = "quiz_complete"          # bool: True when all questions answered
 
 
@@ -45,7 +44,6 @@ _DEFAULTS: dict[str, Any] = {
     SS_TOPICS: [],
     SS_SELECTED_TOPICS: [],
     SS_NUM_QUESTIONS: 5,
-    SS_BLOOM_LEVEL: 4,
     SS_QUESTIONS: [],
     SS_CURRENT_Q_IDX: 0,
     SS_ANSWERS: {},

@@ -74,9 +74,16 @@ st.divider()
 
 # ── Question display ──────────────────────────────────────────────────────────
 topic_label = q.get("topic", "")
-bloom_label = f"Bloom's L{q.get('bloom_level', '')} — {q.get('bloom_level_name', '')}"
+question_type = q.get("question_type", "single_answer").replace("_", " ").title()
+answer_mode = q.get("answer_mode", "single")
+case_study_context = q.get("case_study_context", "")
 
-st.caption(f"Topic: {topic_label} | {bloom_label}")
+st.caption(f"Topic: {topic_label} | Type: {question_type}")
+
+if case_study_context:
+    st.markdown("#### Case Study Context")
+    st.info(case_study_context)
+
 st.markdown(f"### Q{idx + 1}. {q['question']}")
 st.markdown("")
 
@@ -89,31 +96,48 @@ choice_labels = [f"**{k}.**  {choices[k]}" for k in choice_keys]
 already_answered = q["id"] in answers
 prior_answer = answers.get(q["id"])
 
-# Map prior answer key to label index for pre-selection
-if prior_answer and prior_answer in choice_keys:
-    default_idx = choice_keys.index(prior_answer)
+selected_keys: list[str] = []
+if answer_mode == "multi":
+    # Multi-select questions require exactly two answers.
+    prior_multi = prior_answer if isinstance(prior_answer, list) else []
+    selected_labels = st.multiselect(
+        "Select exactly two answers:",
+        options=choice_labels,
+        default=[f"**{k}.**  {choices[k]}" for k in prior_multi if k in choices],
+        key=f"q_multi_{q['id']}",
+        disabled=already_answered,
+    )
+    selected_keys = [lbl.split(".")[0].replace("**", "").strip() for lbl in selected_labels]
 else:
-    default_idx = None
+    # Map prior answer key to label index for pre-selection
+    if isinstance(prior_answer, list) and prior_answer and prior_answer[0] in choice_keys:
+        default_idx = choice_keys.index(prior_answer[0])
+    else:
+        default_idx = None
 
-# Radio — unique key per question ID prevents Streamlit widget state collisions
-selected_label = st.radio(
-    "Select your answer:",
-    options=choice_labels,
-    index=default_idx,
-    key=f"q_radio_{q['id']}",
-    disabled=already_answered,
-    label_visibility="collapsed",
-)
+    selected_label = st.radio(
+        "Select your answer:",
+        options=choice_labels,
+        index=default_idx,
+        key=f"q_radio_{q['id']}",
+        disabled=already_answered,
+        label_visibility="collapsed",
+    )
+    if selected_label:
+        selected_keys = [selected_label.split(".")[0].replace("**", "").strip()]
 
 # ── Answer feedback (when already answered) ───────────────────────────────────
 if already_answered:
-    correct_key = q.get("correct_answer", "")
-    user_key = prior_answer
+    correct_keys = q.get("correct_answer", [])
+    user_keys = prior_answer if isinstance(prior_answer, list) else []
 
-    if user_key == correct_key:
-        st.success(f"You selected **{user_key}** — Correct!")
+    if set(user_keys) == set(correct_keys):
+        st.success(f"You selected **{', '.join(user_keys)}** — Correct!")
     else:
-        st.error(f"You selected **{user_key}** — The correct answer is **{correct_key}**.")
+        st.error(
+            f"You selected **{', '.join(user_keys) if user_keys else 'none'}** — "
+            f"The correct answer is **{', '.join(correct_keys)}**."
+        )
     st.info("Full explanations available on the Results page after submitting.")
 
 st.divider()
@@ -140,20 +164,22 @@ with nav_right:
         # Submit current answer
         is_last = idx == total - 1
         btn_label = "Submit & Finish" if is_last else "Submit & Next →"
+        can_submit = bool(selected_keys)
+        if answer_mode == "multi":
+            can_submit = len(selected_keys) == 2
+            if not can_submit:
+                st.caption("Select exactly two answers for this question.")
 
-        if st.button(btn_label, type="primary", use_container_width=True, disabled=selected_label is None):
-            if selected_label:
-                # Extract the answer key (e.g., "A" from "**A.**  Some choice text")
-                chosen_key = selected_label.split(".")[0].replace("**", "").strip()
-                answers[q["id"]] = chosen_key
-                set(SS_ANSWERS, answers)
+        if st.button(btn_label, type="primary", use_container_width=True, disabled=not can_submit):
+            answers[q["id"]] = selected_keys
+            set(SS_ANSWERS, answers)
 
-                if is_last:
-                    set(SS_QUIZ_COMPLETE, True)
-                    st.rerun()
-                else:
-                    set(SS_CURRENT_Q_IDX, idx + 1)
-                    st.rerun()
+            if is_last:
+                set(SS_QUIZ_COMPLETE, True)
+                st.rerun()
+            else:
+                set(SS_CURRENT_Q_IDX, idx + 1)
+                st.rerun()
     else:
         # Already answered — just navigate
         is_last = idx == total - 1
@@ -202,7 +228,7 @@ with st.sidebar:
 
     correct_so_far = sum(
         1 for question in questions
-        if answers.get(question["id"]) == question.get("correct_answer")
+        if set(answers.get(question["id"], [])) == set(question.get("correct_answer", []))
     )
     if answered_count > 0:
         st.markdown(f"**Correct so far:** {correct_so_far}/{answered_count}")

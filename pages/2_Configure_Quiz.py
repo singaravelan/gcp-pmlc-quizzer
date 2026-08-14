@@ -4,14 +4,13 @@ Page 2 — Configure Quiz
 Lets the user:
   1. Select which exam topics to include
   2. Set the number of questions per topic
-  3. Choose Bloom's taxonomy level
-  4. Generate the full question set (with web search + RAG grounding)
+    3. Generate the full question set (with web search + RAG grounding)
 """
 import random
 
 import streamlit as st
 
-from config.settings import APP_TITLE, BLOOM_LEVELS
+from config.settings import APP_TITLE
 from utils.session_manager import (
     init_session,
     get,
@@ -23,7 +22,6 @@ from utils.session_manager import (
     SS_EXAM_TITLE,
     SS_SELECTED_TOPICS,
     SS_NUM_QUESTIONS,
-    SS_BLOOM_LEVEL,
     SS_QUESTIONS,
     SS_VECTOR_STORE,
 )
@@ -109,32 +107,17 @@ with param_col1:
     set(SS_NUM_QUESTIONS, num_q)
 
 with param_col2:
-    bloom_name_to_level = {v: k for k, v in BLOOM_LEVELS.items()}
-    bloom_options = list(BLOOM_LEVELS.values())
-
-    current_bloom = get(SS_BLOOM_LEVEL, 4)
-    current_bloom_name = BLOOM_LEVELS.get(current_bloom, "Analysis")
-    default_idx = bloom_options.index(current_bloom_name) if current_bloom_name in bloom_options else 1
-
-    bloom_name = st.selectbox(
-        "Bloom's Taxonomy Level",
-        options=bloom_options,
-        index=default_idx,
-        help=(
-            "Application (L3): Apply knowledge to solve problems\n"
-            "Analysis (L4): Break down and examine components\n"
-            "Synthesis (L5): Combine concepts to design solutions\n"
-            "Evaluation (L6): Judge and justify design decisions"
-        ),
+    st.markdown(
+        "**Question style:** PMLE exam pattern mix (single-answer, multi-select, "
+        "case-study, architecture/scenario, best-solution, first/next-step, "
+        "service-mapping, troubleshooting, optimization, constraint-heavy, metrics)."
     )
-    bloom_level = bloom_name_to_level[bloom_name]
-    set(SS_BLOOM_LEVEL, bloom_level)
 
 total_questions = len(selected_topic_ids) * num_q
 
 st.info(
     f"**Summary:** {len(selected_topic_ids)} topic(s) × {num_q} question(s) = "
-    f"**{total_questions} total questions** at **{bloom_name}** level (Bloom's L{bloom_level})"
+    f"**{total_questions} total questions** in PMLE exam-style format"
 )
 
 st.divider()
@@ -145,7 +128,8 @@ st.markdown(
     "For each topic, the app will:\n"
     "1. Search official GCP documentation (DuckDuckGo, free)\n"
     "2. Retrieve relevant chunks from your uploaded study materials (RAG)\n"
-    "3. Generate scenario-based exam questions grounded in both sources"
+    "3. Generate PMLE-style exam questions grounded in both sources\n"
+    "4. Validate and refine each question through a multi-agent critic-judge loop"
 )
 
 if vector_store is None:
@@ -194,7 +178,6 @@ if st.button("Generate Quiz", type="primary", use_container_width=True):
                 exam_title=exam_title,
                 topic=topic,
                 num_questions=num_q,
-                bloom_level=bloom_level,
                 rag_context=rag_context,
                 web_context=web_context,
                 source_urls=source_urls,
@@ -231,7 +214,7 @@ if st.button("Generate Quiz", type="primary", use_container_width=True):
     else:
         st.error(
             "No questions were generated. Check your AI backend connection and try again. "
-            "You may also try selecting fewer topics or a different Bloom's level."
+            "You may also try selecting fewer topics."
         )
         if generation_errors:
             with st.expander("Error details"):

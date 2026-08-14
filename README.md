@@ -11,7 +11,7 @@ An AI-powered exam quiz generator for the **GCP Professional Machine Learning En
 - **Dual AI backend** — switch between Claude (Anthropic) and Ollama (local) in one `.env` line
 - **RAG grounding** — FAISS vector store indexes all your uploaded study materials; every question is grounded in your own content
 - **Web search grounding** — DuckDuckGo search (free, no API key) fetches current official GCP documentation for each topic
-- **Strict item writing** — questions follow professional psychometric standards: Bloom's Taxonomy levels 3–6, scenario-based stems, 4 choices, no negation in the stem, no "all of the above"
+- **PMLE-style item writing** — questions follow real exam patterns: scenario-driven decisions, best-solution trade-offs, multi-select, troubleshooting, and constraint-heavy architecture choices
 - **Topic-aware generation** — AI extracts exam objectives from your uploaded guide; you choose which topics to practice
 - **Interactive quiz** — one question at a time, sidebar navigator, back/forward navigation, answers persist
 - **Results review** — score by topic, per-choice explanations, optional live link validation for reference URLs
@@ -110,13 +110,29 @@ streamlit run app.py
 
 Opens at `http://localhost:8501`.
 
+### Tests
+
+Run all tests:
+
+```bash
+.venv/bin/python -m pytest
+```
+
+Test suite structure:
+
+- `tests/smoke/` — quick startup/import/basic behavior checks
+- `tests/regression/` — bug-fix protection tests
+
+**Policy:** Every code change must pass all smoke and regression tests before it is considered complete.
+See `TESTING_POLICY.md` for full details.
+
 ---
 
 ## Usage
 
 1. **Upload Document** — Upload your GCP PMLE exam guide (PDF, DOCX, or TXT). Optionally add extra study materials (whitepapers, notes). The app builds a FAISS RAG index from all files.
 
-2. **Configure Quiz** — Select which exam topics to practice, set questions per topic (1–10), and choose a Bloom's Taxonomy level (Application → Evaluation).
+2. **Configure Quiz** — Select which exam topics to practice and set questions per topic (1–10). The app generates a PMLE-style mix of question formats.
 
 3. **Take Quiz** — Answer one question at a time. Use the sidebar navigator to jump between questions. Your answers are saved automatically.
 
@@ -143,7 +159,7 @@ Embeddings:
 
 Every generated question follows professional psychometric guidelines:
 
-- Bloom's Taxonomy levels 3–6 only (no recall or definition questions)
+- PMLE-style scenarios and architecture decisions (no recall-only questions)
 - Real-world GCP scenario in every stem
 - No negation ("not") in the question stem
 - Exactly 4 choices — one unambiguously correct, three plausible distractors
