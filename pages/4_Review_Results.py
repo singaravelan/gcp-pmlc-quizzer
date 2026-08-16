@@ -58,9 +58,14 @@ if not get(SS_QUIZ_COMPLETE) and not answers:
 
 # ── Score Calculation ─────────────────────────────────────────────────────────
 total = len(questions)
+
+
+def is_correct(q: dict) -> bool:
+    return set(answers.get(q["id"], [])) == set(q.get("correct_answer", []))
+
+
 correct_count = sum(
-    1 for q in questions
-    if answers.get(q["id"]) == q.get("correct_answer")
+    1 for q in questions if is_correct(q)
 )
 incorrect_count = total - correct_count
 score_pct = (correct_count / total * 100) if total > 0 else 0
@@ -101,7 +106,7 @@ for q in questions:
     if topic not in topic_stats:
         topic_stats[topic] = {"correct": 0, "total": 0}
     topic_stats[topic]["total"] += 1
-    if answers.get(q["id"]) == q.get("correct_answer"):
+    if is_correct(q):
         topic_stats[topic]["correct"] += 1
 
 topic_cols = st.columns(min(4, len(topic_stats)))
@@ -148,9 +153,6 @@ if validate_links:
             link_status = validate_links_batch(all_refs)
 
 # ── Filter questions ──────────────────────────────────────────────────────────
-def is_correct(q: dict) -> bool:
-    return answers.get(q["id"]) == q.get("correct_answer")
-
 if filter_mode == "Incorrect only":
     display_questions = [q for q in questions if not is_correct(q)]
 elif filter_mode == "Correct only":
@@ -164,20 +166,27 @@ else:
     # ── Per-question Review ───────────────────────────────────────────────────
     for q in display_questions:
         q_id = q["id"]
-        user_ans = answers.get(q_id, "—")
-        correct_ans = q.get("correct_answer", "?")
+        user_ans = answers.get(q_id, [])
+        correct_ans = q.get("correct_answer", [])
         correct = is_correct(q)
 
         icon = "✅" if correct else "❌"
         topic_tag = q.get("topic", "")
-        bloom_tag = f"L{q.get('bloom_level', '')} {q.get('bloom_level_name', '')}"
+        qtype_tag = q.get("question_type", "single_answer").replace("_", " ").title()
+        answer_mode = q.get("answer_mode", "single")
+        case_study_context = q.get("case_study_context", "")
 
         # Auto-expand incorrect questions
         with st.expander(
             f"{icon}  Q{q_id}: {q['question'][:90]}{'...' if len(q['question']) > 90 else ''}",
             expanded=not correct,
         ):
-            st.caption(f"Topic: {topic_tag} | Bloom's: {bloom_tag}")
+            st.caption(f"Topic: {topic_tag} | Type: {qtype_tag}")
+            if answer_mode == "multi":
+                st.caption("This is a multiple-select question (exactly two correct answers).")
+            if case_study_context:
+                st.markdown("**Case Study Context**")
+                st.info(case_study_context)
             st.markdown(f"**{q['question']}**")
             st.markdown("")
 
@@ -188,11 +197,14 @@ else:
                 prefix = ""
                 suffix = ""
 
-                if key == correct_ans:
+                if key in correct_ans:
                     prefix = "✅ "
                     suffix = " ← **Correct Answer**"
-                elif key == user_ans and not correct:
+                elif key in user_ans and not correct:
                     prefix = "❌ "
+                    suffix = " ← *Your Answer*"
+                elif key in user_ans and correct:
+                    prefix = "✅ "
                     suffix = " ← *Your Answer*"
 
                 st.markdown(f"{prefix}**{key}.** {choice_text}{suffix}")
@@ -200,12 +212,15 @@ else:
             # Answer summary
             st.markdown("")
             if correct:
-                st.success(f"Your answer: **{user_ans}** — Correct!")
+                st.success(f"Your answer: **{', '.join(user_ans)}** — Correct!")
             else:
-                if user_ans == "—":
-                    st.warning(f"Not answered | Correct answer: **{correct_ans}**")
+                if not user_ans:
+                    st.warning(f"Not answered | Correct answer: **{', '.join(correct_ans)}**")
                 else:
-                    st.error(f"Your answer: **{user_ans}** | Correct answer: **{correct_ans}**")
+                    st.error(
+                        f"Your answer: **{', '.join(user_ans)}** | "
+                        f"Correct answer: **{', '.join(correct_ans)}**"
+                    )
 
             # Explanation
             if show_explanations:

@@ -60,38 +60,6 @@ def build_vector_store(
     return store
 
 
-def add_documents_to_store(
-    new_texts: list[str],
-    new_filenames: list[str],
-    existing_store: FAISS | None,
-) -> FAISS:
-    """
-    Add new documents to an existing FAISS store (or create one if None).
-
-    Args:
-        new_texts: Plain-text content of documents to add.
-        new_filenames: Corresponding filenames.
-        existing_store: Existing FAISS store to merge into, or None to create fresh.
-
-    Returns:
-        Updated FAISS store.
-    """
-    new_docs: list[Document] = []
-    for text, filename in zip(new_texts, new_filenames):
-        new_docs.extend(_text_to_documents(text, source=filename))
-
-    if not new_docs:
-        return existing_store  # type: ignore[return-value]
-
-    embeddings = get_embeddings()
-
-    if existing_store is None:
-        return FAISS.from_documents(new_docs, embeddings)
-
-    existing_store.add_documents(new_docs)
-    return existing_store
-
-
 def retrieve_context(
     query: str,
     vector_store: FAISS,

@@ -91,19 +91,6 @@ def check_llm_availability() -> tuple[bool, str]:
         return False, str(exc)
 
 
-def check_embeddings_availability() -> tuple[bool, str]:
-    """
-    Test embeddings model availability.
-    Returns (is_available, error_message).
-    """
-    try:
-        emb = get_embeddings()
-        emb.embed_query("test")
-        return True, ""
-    except Exception as exc:
-        return False, str(exc)
-
-
 def get_backend_display_name() -> str:
     """Human-readable description of the active backend."""
     if AI_BACKEND == "claude":

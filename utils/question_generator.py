@@ -4,7 +4,7 @@ Question generation pipeline using LangChain chains.
 Three stages:
   1. classify_document()   — is this an exam-related document?
   2. extract_topics()      — extract exam objectives and knowledge areas
-  3. generate_questions()  — create MCQ questions grounded in RAG + web sources
+    3. generate_questions()  — create PMLE-style questions grounded in RAG + web sources
 """
 from __future__ import annotations
 
@@ -16,7 +16,6 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
 from utils.ai_client import get_llm
-from config.settings import BLOOM_LEVELS
 
 
 # ── Stage 1: Document Classification ────────────────────────────────────────
@@ -124,13 +123,29 @@ cloud computing and machine learning certifications.
 
 ITEM WRITING GUIDELINES — follow these strictly for every question:
 
-COGNITIVE LEVEL:
-- Use ONLY Bloom's Taxonomy levels 3 (Application), 4 (Analysis), 5 (Synthesis), \
-or 6 (Evaluation).
-- Every question MUST present a realistic professional scenario that requires the \
-candidate to apply knowledge to solve a problem, evaluate a solution, or make a \
-design decision.
-- Never write recall or definition questions.
+PMLE EXAM PATTERN:
+- Build questions in the real PMLE style: scenario-driven, constraint-heavy, architecture \
+trade-offs, lifecycle ordering, diagnostics, optimization, and metric interpretation.
+- Include a mix of these question types across each generated set when possible:
+    - single_answer
+    - multiple_select
+    - case_study
+    - scenario_architecture
+    - best_solution
+    - first_step
+    - next_step
+    - service_mapping
+    - troubleshooting
+    - optimization
+    - constraint_heavy
+    - metrics_interpretation
+- For "multiple_select", use stems like "Which TWO actions should you take?" and return \
+exactly two correct choices.
+- For "case_study", provide reusable scenario context in "case_study_context" and keep \
+the question stem focused on a single decision.
+- Prefer "best" answer framing when multiple options are plausible, selecting the option \
+that best satisfies stated constraints with the least operational burden.
+- Never write recall-only or definition-only questions.
 
 STEM (QUESTION TEXT):
 - Write in active voice, present tense, 6th-grade reading level.
@@ -141,7 +156,8 @@ STEM (QUESTION TEXT):
 
 ANSWER CHOICES:
 - Provide EXACTLY 4 choices labeled A, B, C, D.
-- There must be exactly ONE unambiguously correct answer.
+- For single-answer styles: exactly ONE correct answer.
+- For multiple-select styles: exactly TWO correct answers.
 - The 3 distractors must be plausible but clearly incorrect to someone with deep \
 knowledge of the subject.
 - Choices must be parallel in structure and similar in length.
@@ -158,13 +174,12 @@ OUTPUT FORMAT:
 - Each element must match the schema provided in the user message exactly."""
 
 _QUESTION_USER = """\
-Generate exactly {num_questions} multiple-choice questions for the topic below.
+Generate exactly {num_questions} PMLE-style exam questions for the topic below.
 
 EXAM: {exam_title}
 TOPIC: {topic_name}
 TOPIC DESCRIPTION: {topic_description}
 SUBTOPICS TO COVER: {subtopics}
-BLOOM'S LEVEL: {bloom_level_name} (Level {bloom_level})
 
 SOURCE DOCUMENTATION (ground your questions in this content):
 ---
@@ -185,8 +200,9 @@ this schema exactly:
   {{
     "id": 1,
     "topic": "{topic_name}",
-    "bloom_level": {bloom_level},
-    "bloom_level_name": "{bloom_level_name}",
+        "question_type": "single_answer",
+        "answer_mode": "single",
+        "case_study_context": "",
     "question": "<complete scenario-based question stem as a full sentence ending with ?>",
     "choices": {{
       "A": "<choice A text>",
@@ -194,43 +210,35 @@ this schema exactly:
       "C": "<choice C text>",
       "D": "<choice D text>"
     }},
-    "correct_answer": "A",
+        "correct_answer": ["A"],
     "explanation": "<2-4 sentences: why the correct answer is right, and why each \
 distractor is wrong — be specific, cite concepts from the source documentation>",
     "reference": "<one URL from the AVAILABLE SOURCE URLS above>"
   }}
-]"""
+]
+
+Hard requirements:
+- Use answer_mode="single" with a one-item correct_answer array for single-answer styles.
+- Use answer_mode="multi" with exactly two correct_answer keys for multiple-select.
+- If question_type="case_study", include a non-empty case_study_context.
+- Ensure each correct_answer key exists in choices.
+- Keep reference as a real URL from AVAILABLE SOURCE URLS when possible.
+"""
 
 
-def generate_questions(
-    exam_title: str,
-    topic: dict[str, Any],
+def _invoke_generation(
+    ctx: dict[str, Any],
     num_questions: int,
-    bloom_level: int,
-    rag_context: str = "",
-    web_context: str = "",
-    source_urls: list[str] | None = None,
+    temperature: float = 0.3,
 ) -> list[dict[str, Any]]:
-    """
-    Generate exam-quality MCQ questions for a single topic.
-
-    Args:
-        exam_title: Name of the certification exam.
-        topic: Dict with keys: name, description, subtopics.
-        num_questions: Number of questions to generate.
-        bloom_level: Bloom's taxonomy level (3–6).
-        rag_context: Retrieved chunks from the user's uploaded study materials.
-        web_context: Fetched content from official documentation sources.
-        source_urls: List of real URLs to use in question references.
-
-    Returns:
-        List of question dicts conforming to the question JSON schema.
-    """
-    bloom_name = BLOOM_LEVELS.get(bloom_level, "Application")
+    """Invoke the generation chain and return the raw parsed question list."""
+    topic = ctx.get("topic", {})
     subtopics_str = ", ".join(topic.get("subtopics", [topic.get("name", "")]))
-    urls_str = "\n".join(source_urls or []) or "No verified URLs available."
+    urls_str = "\n".join(ctx.get("source_urls") or []) or "No verified URLs available."
+    web_context = ctx.get("web_context", "")
+    rag_context = ctx.get("rag_context", "")
 
-    llm = get_llm(temperature=0.3)
+    llm = get_llm(temperature=temperature)
     chain = (
         ChatPromptTemplate.from_messages([
             ("system", _QUESTION_SYSTEM),
@@ -242,21 +250,144 @@ def generate_questions(
 
     raw = chain.invoke({
         "num_questions": num_questions,
-        "exam_title": exam_title,
+        "exam_title": ctx.get("exam_title", ""),
         "topic_name": topic.get("name", ""),
         "topic_description": topic.get("description", ""),
         "subtopics": subtopics_str,
-        "bloom_level": bloom_level,
-        "bloom_level_name": bloom_name,
         "web_context": web_context[:12_000] if web_context else "No web content retrieved.",
         "rag_context": rag_context[:8_000] if rag_context else "No study material context retrieved.",
         "source_urls": urls_str,
     })
 
     result = _parse_json(raw, fallback=[])
-    if not isinstance(result, list):
-        return []
-    return result
+    return result if isinstance(result, list) else []
+
+
+def generate_questions(
+    exam_title: str,
+    topic: dict[str, Any],
+    num_questions: int,
+    rag_context: str = "",
+    web_context: str = "",
+    source_urls: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Generate exam-quality MCQ questions for a single topic.
+
+    Args:
+        exam_title: Name of the certification exam.
+        topic: Dict with keys: name, description, subtopics.
+        num_questions: Number of questions to generate.
+        rag_context: Retrieved chunks from the user's uploaded study materials.
+        web_context: Fetched content from official documentation sources.
+        source_urls: List of real URLs to use in question references.
+
+    Returns:
+        List of question dicts conforming to the question JSON schema.
+    """
+    ctx = {
+        "exam_title": exam_title,
+        "topic": topic,
+        "rag_context": rag_context,
+        "web_context": web_context,
+        "source_urls": source_urls or [],
+    }
+
+    from utils.question_graph import run_question_pipeline
+
+    results: list[dict[str, Any]] = []
+    for _ in range(num_questions):
+        question = run_question_pipeline(ctx)
+        if question is not None:
+            results.append(question)
+    return results
+
+
+CHOICE_KEYS = {"A", "B", "C", "D"}
+
+
+def normalize_one(q: Any, idx: int = 1) -> dict[str, Any] | None:
+    """Coerce a single raw LLM question into the stable schema, or None if unusable."""
+    if not isinstance(q, dict):
+        return None
+
+    choices = q.get("choices")
+    if not isinstance(choices, dict):
+        return None
+
+    clean_choices = {
+        k: str(v).strip()
+        for k, v in choices.items()
+        if k in CHOICE_KEYS and str(v).strip()
+    }
+
+    answer_mode = str(q.get("answer_mode", "single")).lower().strip()
+    answer_mode = "multi" if answer_mode == "multi" else "single"
+
+    raw_correct = q.get("correct_answer", [])
+    if isinstance(raw_correct, str):
+        correct = [raw_correct.strip().upper()]
+    elif isinstance(raw_correct, list):
+        correct = [str(x).strip().upper() for x in raw_correct]
+    else:
+        correct = []
+    correct = list(dict.fromkeys(k for k in correct if k in CHOICE_KEYS))
+
+    return {
+        "id": int(q.get("id", idx)) if str(q.get("id", idx)).isdigit() else idx,
+        "topic": str(q.get("topic", "")).strip(),
+        "question_type": str(q.get("question_type", "single_answer")).strip() or "single_answer",
+        "answer_mode": answer_mode,
+        "case_study_context": str(q.get("case_study_context", "")).strip(),
+        "question": str(q.get("question", "")).strip(),
+        "choices": clean_choices,
+        "correct_answer": correct,
+        "explanation": str(q.get("explanation", "")).strip(),
+        "reference": str(q.get("reference", "")).strip(),
+    }
+
+
+def validate_question(q: dict[str, Any]) -> list[str]:
+    """Return deterministic rule violations for a normalized question (empty = pass)."""
+    issues: list[str] = []
+    choices = q.get("choices", {})
+    correct = q.get("correct_answer", [])
+    mode = q.get("answer_mode", "single")
+
+    if set(choices.keys()) != CHOICE_KEYS:
+        issues.append("Choices must be exactly four options labeled A, B, C, D.")
+
+    if not correct:
+        issues.append("No correct answer provided.")
+    for key in correct:
+        if key not in choices:
+            issues.append(f"Correct answer '{key}' is not among the choices.")
+
+    if mode == "multi" and len(correct) != 2:
+        issues.append("Multiple-select questions must have exactly two correct answers.")
+    if mode == "single" and len(correct) != 1:
+        issues.append("Single-answer questions must have exactly one correct answer.")
+
+    texts = [t.strip().lower() for t in choices.values()]
+    if len(texts) != len(set(texts)):
+        issues.append("Choices contain duplicate option text.")
+
+    if not q.get("question"):
+        issues.append("Question stem is empty.")
+    if not q.get("explanation"):
+        issues.append("Explanation is empty.")
+
+    stem = q.get("question", "").lower()
+    for key in correct:
+        answer_text = choices.get(key, "").strip().lower()
+        if answer_text and answer_text in stem:
+            issues.append("Correct answer text is leaked in the question stem.")
+            break
+
+    if q.get("question_type") == "case_study" and not q.get("case_study_context"):
+        issues.append("Case-study questions must include case_study_context.")
+
+    return issues
 
 
 # ── JSON Parsing Helper ──────────────────────────────────────────────────────

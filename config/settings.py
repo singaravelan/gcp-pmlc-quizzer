@@ -47,13 +47,9 @@ SEARCH_FETCH_TOP_N: int = 3
 SEARCH_PAGE_MAX_CHARS: int = 8000
 SEARCH_DELAY_SECONDS: float = 0.5
 
-# Question generation
-BLOOM_LEVELS: dict[int, str] = {
-    3: "Application",
-    4: "Analysis",
-    5: "Synthesis",
-    6: "Evaluation",
-}
+# Question generation graph (critic-refiner workflow)
+QUESTION_MAX_ITERATIONS: int = int(os.getenv("QUESTION_MAX_ITERATIONS", "3"))
+QUESTION_ACCEPT_SCORE: float = float(os.getenv("QUESTION_ACCEPT_SCORE", "8.5"))
 
 # Link validation
 LINK_VALIDATE_TIMEOUT: int = 5
