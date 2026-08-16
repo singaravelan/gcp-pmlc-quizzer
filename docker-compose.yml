@@ -1,0 +1,22 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gcp-pmle-quizzer
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    volumes:
+      - quizzer_data:/app/data
+    environment:
+      # Allows reaching host-level services (like local Ollama) from inside container
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+volumes:
+  quizzer_data:
+    name: gcp-pmle-quizzer-data

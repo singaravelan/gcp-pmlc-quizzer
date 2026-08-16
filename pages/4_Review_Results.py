@@ -14,7 +14,6 @@ from config.settings import APP_TITLE
 from utils.session_manager import (
     init_session,
     get,
-    set,
     reset_quiz,
     reset_all,
     has_questions,

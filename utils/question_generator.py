@@ -260,6 +260,8 @@ def _invoke_generation(
     })
 
     result = _parse_json(raw, fallback=[])
+    if isinstance(result, dict):
+        return [result]
     return result if isinstance(result, list) else []
 
 
@@ -270,6 +272,7 @@ def generate_questions(
     rag_context: str = "",
     web_context: str = "",
     source_urls: list[str] | None = None,
+    fast_mode: bool = False,
 ) -> list[dict[str, Any]]:
     """
     Generate exam-quality MCQ questions for a single topic.
@@ -281,6 +284,7 @@ def generate_questions(
         rag_context: Retrieved chunks from the user's uploaded study materials.
         web_context: Fetched content from official documentation sources.
         source_urls: List of real URLs to use in question references.
+        fast_mode: When True, bypasses the critic-refiner graph and generates in batch.
 
     Returns:
         List of question dicts conforming to the question JSON schema.
@@ -293,13 +297,34 @@ def generate_questions(
         "source_urls": source_urls or [],
     }
 
+    if fast_mode:
+        results: list[dict[str, Any]] = []
+        attempts = 0
+        max_attempts = 3
+        while len(results) < num_questions and attempts < max_attempts:
+            needed = num_questions - len(results)
+            raw_list = _invoke_generation(ctx, num_questions=needed)
+            if isinstance(raw_list, dict):
+                raw_list = [raw_list]
+            for raw_q in raw_list:
+                q = normalize_one(raw_q, idx=len(results) + 1)
+                if q is not None and not validate_question(q):
+                    results.append(q)
+                    if len(results) >= num_questions:
+                        break
+            attempts += 1
+        return results
+
     from utils.question_graph import run_question_pipeline
 
     results: list[dict[str, Any]] = []
-    for _ in range(num_questions):
+    attempts = 0
+    max_attempts = num_questions * 2
+    while len(results) < num_questions and attempts < max_attempts:
         question = run_question_pipeline(ctx)
         if question is not None:
             results.append(question)
+        attempts += 1
     return results
 
 

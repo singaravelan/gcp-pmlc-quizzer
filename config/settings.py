@@ -12,7 +12,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(BASE_DIR / ".env", override=True)
+# Do not override existing process/container environment variables with .env file values
+load_dotenv(BASE_DIR / ".env", override=False)
 
 # AI Backend selection
 AI_BACKEND: str = os.getenv("AI_BACKEND", "claude")  # "claude" | "ollama"
@@ -23,7 +24,15 @@ CLAUDE_MODEL: str = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 CLAUDE_MODEL_FAST: str = os.getenv("CLAUDE_MODEL_FAST", "claude-haiku-4-5-20251001")
 
 # Ollama settings
-OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+is_docker = os.path.exists("/.dockerenv") or os.getenv("RUNNING_IN_DOCKER") == "true"
+default_ollama_url = "http://host.docker.internal:11434" if is_docker else "http://localhost:11434"
+raw_ollama_url = os.getenv("OLLAMA_BASE_URL", default_ollama_url)
+
+# Automatically rewrite localhost / 127.0.0.1 to host.docker.internal when inside a Docker container
+if is_docker:
+    raw_ollama_url = raw_ollama_url.replace("localhost", "host.docker.internal").replace("127.0.0.1", "host.docker.internal")
+
+OLLAMA_BASE_URL: str = raw_ollama_url
 OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.2")
 OLLAMA_EMBED_MODEL: str = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 
@@ -35,6 +44,7 @@ HUGGINGFACE_EMBED_MODEL: str = "all-MiniLM-L6-v2"
 APP_TITLE: str = os.getenv("APP_TITLE", "GCP PMLE Quizzer")
 MAX_FILE_SIZE_MB: int = int(os.getenv("MAX_FILE_SIZE_MB", "20"))
 SUPPORTED_EXTENSIONS: set[str] = {".pdf", ".docx", ".txt"}
+CACHE_DIR: Path = BASE_DIR / "data" / "cache"
 
 # RAG settings
 RAG_CHUNK_SIZE: int = 1000

@@ -15,7 +15,7 @@ from config.settings import APP_TITLE, SUPPORTED_EXTENSIONS
 from utils.session_manager import (
     init_session,
     get,
-    set,
+    set_state,
     reset_all,
     has_document,
     has_topics,
@@ -30,6 +30,14 @@ from utils.session_manager import (
 from utils.document_parser import parse_document, validate_file_size, truncate_for_context
 from utils.question_generator import classify_document, extract_topics
 from utils.rag_engine import build_vector_store, count_chunks
+from utils.cache_manager import (
+    compute_files_hash,
+    has_document_cache,
+    load_document_cache,
+    save_document_cache,
+    list_cached_documents,
+    load_cache_into_session,
+)
 
 st.set_page_config(
     page_title=f"Upload Document — {APP_TITLE}",
@@ -44,6 +52,32 @@ st.markdown(
     "The app will extract topics and build a knowledge base for question generation."
 )
 st.divider()
+
+# ── Cached Knowledge Bases ───────────────────────────────────────────────────
+saved_caches = list_cached_documents()
+if saved_caches:
+    st.subheader("⚡ Saved Knowledge Bases on Disk")
+    st.markdown("You can instantly load a previously processed exam guide without re-uploading:")
+    cache_col1, cache_col2 = st.columns([3, 1])
+    cache_map = {
+        f"{c['exam_title']} — {c['primary_name']} ({c['topics_count']} topics)": c["hash"]
+        for c in saved_caches
+    }
+    with cache_col1:
+        chosen_cache = st.selectbox(
+            "Saved knowledge base:",
+            options=list(cache_map.keys()),
+            label_visibility="collapsed",
+        )
+    with cache_col2:
+        if st.button("📂 Load from Cache", type="secondary", use_container_width=True):
+            target_hash = cache_map[chosen_cache]
+            cached_pkg = load_document_cache(target_hash)
+            if cached_pkg:
+                load_cache_into_session(cached_pkg)
+                st.success(f"Loaded '{cached_pkg.get('exam_title')}'!")
+                st.rerun()
+    st.divider()
 
 # ── File Upload ───────────────────────────────────────────────────────────────
 st.subheader("1. Select Files")
@@ -62,9 +96,48 @@ uploaded_files = st.file_uploader(
 if uploaded_files:
     st.info(f"**{len(uploaded_files)}** file(s) selected: {', '.join(f.name for f in uploaded_files)}")
 
-    if st.button("Analyze and Index Documents", type="primary", use_container_width=True):
+    col_btn, col_chk = st.columns([1, 1])
+    with col_chk:
+        force_rebuild = st.checkbox(
+            "🔄 Force re-analysis (ignore cached data)",
+            value=False,
+            help="Check this if you want to force the LLM to re-extract topics and rebuild the vector store from scratch.",
+        )
+
+    with col_btn:
+        analyze_clicked = st.button("Analyze and Index Documents", type="primary", use_container_width=True)
+
+    if analyze_clicked:
         reset_all()
 
+        # Read uploaded files into memory for hashing and processing
+        files_data: list[tuple[str, bytes]] = []
+        for f in uploaded_files:
+            f.seek(0)
+            files_data.append((f.name, f.read()))
+
+        doc_hash = compute_files_hash(files_data)
+
+        # Check if cached results exist
+        if not force_rebuild and has_document_cache(doc_hash):
+            cached = load_document_cache(doc_hash)
+            if cached and cached.get("topics"):
+                set_state(SS_DOCUMENT_TEXT, cached.get("primary_text", ""))
+                set_state(SS_DOCUMENT_NAME, cached.get("primary_name", ""))
+                set_state(SS_STUDY_DOCS, cached.get("study_docs", []))
+                set_state(SS_IS_EXAM_DOC, cached.get("is_exam_doc", True))
+                set_state(SS_EXAM_TITLE, cached.get("exam_title", "Exam"))
+                set_state(SS_TOPICS, cached.get("topics", []))
+                set_state(SS_VECTOR_STORE, cached.get("vector_store"))
+
+                chunk_count = count_chunks(cached.get("vector_store")) if cached.get("vector_store") else 0
+                st.success(
+                    f"⚡ **Loaded from cache in <0.1s!** Found **{len(cached.get('topics', []))}** topics "
+                    f"and **{chunk_count:,}** indexed RAG chunks for **{cached.get('exam_title')}**."
+                )
+                st.rerun()
+
+        # Otherwise perform the full extraction pipeline
         all_texts: list[str] = []
         all_names: list[str] = []
         parse_errors: list[str] = []
@@ -73,21 +146,21 @@ if uploaded_files:
 
             # ── Step 1: Parse all files ───────────────────────────────────────
             st.write("**Step 1:** Parsing uploaded files...")
-            for i, f in enumerate(uploaded_files):
-                size_err = validate_file_size(f.size, f.name)
+            for name, content in files_data:
+                size_err = validate_file_size(len(content), name)
                 if size_err:
                     parse_errors.append(size_err)
-                    st.warning(f"Skipping {f.name}: {size_err}")
+                    st.warning(f"Skipping {name}: {size_err}")
                     continue
 
                 try:
-                    text = parse_document(f.read(), f.name)
+                    text = parse_document(content, name)
                     all_texts.append(text)
-                    all_names.append(f.name)
-                    st.write(f"  ✅ Parsed **{f.name}** ({len(text):,} characters)")
+                    all_names.append(name)
+                    st.write(f"  ✅ Parsed **{name}** ({len(text):,} characters)")
                 except Exception as e:
-                    parse_errors.append(f"{f.name}: {e}")
-                    st.warning(f"  ❌ Could not parse **{f.name}**: {e}")
+                    parse_errors.append(f"{name}: {e}")
+                    st.warning(f"  ❌ Could not parse **{name}**: {e}")
 
             if not all_texts:
                 status.update(label="No files could be parsed", state="error")
@@ -97,21 +170,21 @@ if uploaded_files:
             # Primary document is the first successfully parsed file
             primary_text = all_texts[0]
             primary_name = all_names[0]
-            set(SS_DOCUMENT_TEXT, primary_text)
-            set(SS_DOCUMENT_NAME, primary_name)
+            set_state(SS_DOCUMENT_TEXT, primary_text)
+            set_state(SS_DOCUMENT_NAME, primary_name)
 
             # Store additional study docs
             study_docs = [
                 {"filename": name, "text": text}
                 for name, text in zip(all_names[1:], all_texts[1:])
             ]
-            set(SS_STUDY_DOCS, study_docs)
+            set_state(SS_STUDY_DOCS, study_docs)
 
             # ── Step 2: Classify primary document ────────────────────────────
             st.write("**Step 2:** Classifying primary document...")
             classification = classify_document(primary_text)
             is_exam = classification.get("is_exam_related", True)
-            set(SS_IS_EXAM_DOC, is_exam)
+            set_state(SS_IS_EXAM_DOC, is_exam)
 
             if is_exam:
                 st.write(
@@ -140,15 +213,16 @@ if uploaded_files:
                 )
                 st.stop()
 
-            set(SS_EXAM_TITLE, exam_title)
-            set(SS_TOPICS, topics)
+            set_state(SS_EXAM_TITLE, exam_title)
+            set_state(SS_TOPICS, topics)
             st.write(f"  ✅ Extracted **{len(topics)}** topics for **{exam_title}**")
 
             # ── Step 4: Build FAISS vector store ─────────────────────────────
             st.write("**Step 4:** Building RAG knowledge base (this may take a moment)...")
+            vector_store = None
             try:
                 vector_store = build_vector_store(all_texts, all_names)
-                set(SS_VECTOR_STORE, vector_store)
+                set_state(SS_VECTOR_STORE, vector_store)
                 chunk_count = count_chunks(vector_store)
                 st.write(
                     f"  ✅ Indexed **{len(all_texts)}** document(s) → "
@@ -160,7 +234,20 @@ if uploaded_files:
                     f"Questions will be generated without RAG context."
                 )
 
-            status.update(label="Documents analyzed successfully!", state="complete")
+            # ── Step 5: Save to disk cache ───────────────────────────────────
+            save_document_cache(
+                doc_hash=doc_hash,
+                primary_name=primary_name,
+                primary_text=primary_text,
+                study_docs=study_docs,
+                classification=classification,
+                is_exam_doc=is_exam,
+                exam_title=exam_title,
+                topics=topics,
+                vector_store=vector_store,
+            )
+
+            status.update(label="Documents analyzed and cached successfully!", state="complete")
 
 # ── Display current state ────────────────────────────────────────────────────
 if has_topics():

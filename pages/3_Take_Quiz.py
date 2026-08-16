@@ -13,7 +13,7 @@ from config.settings import APP_TITLE
 from utils.session_manager import (
     init_session,
     get,
-    set,
+    set_state,
     reset_quiz,
     has_questions,
     quiz_complete,
@@ -148,7 +148,7 @@ nav_left, nav_center, nav_right = st.columns([1, 2, 1])
 with nav_left:
     if idx > 0:
         if st.button("← Previous", use_container_width=True):
-            set(SS_CURRENT_Q_IDX, idx - 1)
+            set_state(SS_CURRENT_Q_IDX, idx - 1)
             st.rerun()
 
 with nav_center:
@@ -172,13 +172,13 @@ with nav_right:
 
         if st.button(btn_label, type="primary", use_container_width=True, disabled=not can_submit):
             answers[q["id"]] = selected_keys
-            set(SS_ANSWERS, answers)
+            set_state(SS_ANSWERS, answers)
 
             if is_last:
-                set(SS_QUIZ_COMPLETE, True)
+                set_state(SS_QUIZ_COMPLETE, True)
                 st.rerun()
             else:
-                set(SS_CURRENT_Q_IDX, idx + 1)
+                set_state(SS_CURRENT_Q_IDX, idx + 1)
                 st.rerun()
     else:
         # Already answered — just navigate
@@ -186,13 +186,13 @@ with nav_right:
         if is_last:
             if answered_count == total:
                 if st.button("Finish & View Results →", type="primary", use_container_width=True):
-                    set(SS_QUIZ_COMPLETE, True)
+                    set_state(SS_QUIZ_COMPLETE, True)
                     st.switch_page("pages/4_Review_Results.py")
             else:
                 st.caption("Answer remaining questions to finish.")
         else:
             if st.button("Next →", type="primary", use_container_width=True):
-                set(SS_CURRENT_Q_IDX, idx + 1)
+                set_state(SS_CURRENT_Q_IDX, idx + 1)
                 st.rerun()
 
 # ── Question navigator (sidebar) ──────────────────────────────────────────────
@@ -220,7 +220,7 @@ with st.sidebar:
 
             with btn_cols[j]:
                 if st.button(label, key=f"nav_{rq_id}", use_container_width=True, type=btn_type):
-                    set(SS_CURRENT_Q_IDX, rq_idx)
+                    set_state(SS_CURRENT_Q_IDX, rq_idx)
                     st.rerun()
 
     st.divider()
@@ -236,5 +236,5 @@ with st.sidebar:
     if answered_count == total:
         st.divider()
         if st.button("Submit & View Results", type="primary", use_container_width=True):
-            set(SS_QUIZ_COMPLETE, True)
+            set_state(SS_QUIZ_COMPLETE, True)
             st.switch_page("pages/4_Review_Results.py")

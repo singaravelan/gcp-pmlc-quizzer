@@ -14,7 +14,7 @@ from config.settings import APP_TITLE
 from utils.session_manager import (
     init_session,
     get,
-    set,
+    set_state,
     reset_quiz,
     has_document,
     has_topics,
@@ -22,6 +22,7 @@ from utils.session_manager import (
     SS_EXAM_TITLE,
     SS_SELECTED_TOPICS,
     SS_NUM_QUESTIONS,
+    SS_FAST_MODE,
     SS_QUESTIONS,
     SS_VECTOR_STORE,
 )
@@ -76,7 +77,7 @@ selected_names = st.multiselect(
 )
 
 selected_topic_ids = [t["id"] for t in topics if t["name"] in selected_names]
-set(SS_SELECTED_TOPICS, selected_topic_ids)
+set_state(SS_SELECTED_TOPICS, selected_topic_ids)
 
 if not selected_names:
     st.warning("Select at least one topic to continue.")
@@ -104,7 +105,14 @@ with param_col1:
         value=get(SS_NUM_QUESTIONS, 5),
         help="How many questions to generate for each selected topic.",
     )
-    set(SS_NUM_QUESTIONS, num_q)
+    set_state(SS_NUM_QUESTIONS, num_q)
+
+    fast_mode = st.toggle(
+        "⚡ Fast Generation Mode (Batch)",
+        value=get(SS_FAST_MODE, True),
+        help="Generates questions in batch without the multi-agent critic loop (~10x faster). Highly recommended for local Ollama.",
+    )
+    set_state(SS_FAST_MODE, fast_mode)
 
 with param_col2:
     st.markdown(
@@ -112,6 +120,10 @@ with param_col2:
         "case-study, architecture/scenario, best-solution, first/next-step, "
         "service-mapping, troubleshooting, optimization, constraint-heavy, metrics)."
     )
+    if fast_mode:
+        st.caption("⚡ **Fast Mode ON**: All questions for a topic are generated in a single prompt for speed.")
+    else:
+        st.caption("🔍 **Critic Pipeline ON**: Each question goes through generate → research → critique → judge.")
 
 total_questions = len(selected_topic_ids) * num_q
 
@@ -128,8 +140,8 @@ st.markdown(
     "For each topic, the app will:\n"
     "1. Search official GCP documentation (DuckDuckGo, free)\n"
     "2. Retrieve relevant chunks from your uploaded study materials (RAG)\n"
-    "3. Generate PMLE-style exam questions grounded in both sources\n"
-    "4. Validate and refine each question through a multi-agent critic-judge loop"
+    "3. Generate PMLE-style exam questions grounded in both sources"
+    + ("\n4. Validate each question through a multi-agent critic-judge loop" if not fast_mode else " (in fast batch mode)")
 )
 
 if vector_store is None:
@@ -181,6 +193,7 @@ if st.button("Generate Quiz", type="primary", use_container_width=True):
                 rag_context=rag_context,
                 web_context=web_context,
                 source_urls=source_urls,
+                fast_mode=fast_mode,
             )
 
             # Assign globally unique IDs
@@ -206,7 +219,7 @@ if st.button("Generate Quiz", type="primary", use_container_width=True):
         for idx, q in enumerate(all_questions, start=1):
             q["id"] = idx
 
-        set(SS_QUESTIONS, all_questions)
+        set_state(SS_QUESTIONS, all_questions)
         st.success(f"**{len(all_questions)} questions ready!** Click below to start the quiz.")
         st.divider()
         if st.button("Start Quiz →", type="primary", use_container_width=True):

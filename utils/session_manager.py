@@ -26,6 +26,7 @@ SS_SELECTED_TOPICS = "selected_topics"      # list[int]: topic IDs chosen for qu
 
 # Quiz configuration
 SS_NUM_QUESTIONS = "num_questions"          # int: questions per topic
+SS_FAST_MODE = "fast_mode"                  # bool: bypass critic-refiner loop for speed
 
 # Quiz runtime state
 SS_QUESTIONS = "questions"                  # list[dict]: generated question objects
@@ -44,6 +45,7 @@ _DEFAULTS: dict[str, Any] = {
     SS_TOPICS: [],
     SS_SELECTED_TOPICS: [],
     SS_NUM_QUESTIONS: 5,
+    SS_FAST_MODE: True,
     SS_QUESTIONS: [],
     SS_CURRENT_Q_IDX: 0,
     SS_ANSWERS: {},
@@ -51,11 +53,20 @@ _DEFAULTS: dict[str, Any] = {
 }
 
 
-def init_session() -> None:
-    """Initialize all session state keys with defaults (idempotent)."""
+def init_session(auto_load_cache: bool = True) -> None:
+    """Initialize all session state keys with defaults (idempotent) and auto-restore cache if available."""
     for key, default in _DEFAULTS.items():
         if key not in st.session_state:
             st.session_state[key] = default
+
+    if auto_load_cache and not st.session_state.get(SS_DOCUMENT_TEXT):
+        try:
+            from utils.cache_manager import get_latest_cached_document, load_cache_into_session
+            latest = get_latest_cached_document()
+            if latest:
+                load_cache_into_session(latest)
+        except Exception:
+            pass
 
 
 def get(key: str, default: Any = None) -> Any:
@@ -63,9 +74,15 @@ def get(key: str, default: Any = None) -> Any:
     return st.session_state.get(key, default)
 
 
+get_state = get
+
+
 def set(key: str, value: Any) -> None:
     """Set a session state value."""
     st.session_state[key] = value
+
+
+set_state = set
 
 
 def reset_quiz() -> None:

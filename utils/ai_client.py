@@ -49,6 +49,8 @@ def get_llm(temperature: float = 0.3, fast: bool = False) -> BaseChatModel:
             model=OLLAMA_MODEL,
             base_url=OLLAMA_BASE_URL,
             temperature=temperature,
+            num_ctx=8192,
+            num_predict=4096,
         )
 
 

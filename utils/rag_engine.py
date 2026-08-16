@@ -94,3 +94,22 @@ def count_chunks(vector_store: FAISS) -> int:
         return vector_store.index.ntotal
     except Exception:
         return 0
+
+
+def save_vector_store(vector_store: FAISS, folder_path: str | Any) -> None:
+    """Save FAISS vector store index and docstore to disk."""
+    vector_store.save_local(str(folder_path))
+
+
+def load_vector_store(folder_path: str | Any) -> FAISS | None:
+    """Load FAISS vector store from disk."""
+    embeddings = get_embeddings()
+    try:
+        return FAISS.load_local(
+            str(folder_path),
+            embeddings,
+            allow_dangerous_deserialization=True,
+        )
+    except Exception:
+        return None
+
